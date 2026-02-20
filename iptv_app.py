@@ -2,24 +2,36 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import os
+import sqlalchemy  # Necesitas añadir esto
 
 # Configuración de página
 st.set_page_config(page_title="Administración IPTV Pro", layout="wide")
 
-# --- CARGA DE DATOS LOCALES ---
+# --- CONFIGURACIÓN DE BASE DE DATOS POSTGRES ---
+def get_engine():
+    # Railway inyecta automáticamente la variable DATABASE_URL
+    url = os.getenv("DATABASE_URL")
+    if url and url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return sqlalchemy.create_engine(url)
+
 def load_data():
-    if os.path.exists('database.csv'):
-        df_c = pd.read_csv('database.csv')
-    else:
+    engine = get_engine()
+    try:
+        # Intentamos leer de Postgres en lugar de archivos CSV
+        df_c = pd.read_sql("SELECT * FROM clientes", engine)
+    except:
+        # Si la tabla no existe aún, creamos un DataFrame vacío con tus columnas
         df_c = pd.DataFrame(columns=['Usuario','Servicio','Vencimiento','WhatsApp','Observaciones'])
     
-    if os.path.exists('finanzas.csv'):
-        df_f = pd.read_csv('finanzas.csv')
-    else:
+    try:
+        df_f = pd.read_sql("SELECT * FROM finanzas", engine)
+    except:
         df_f = pd.DataFrame(columns=['Fecha','Tipo','Detalle','Monto'])
         
     return df_c.fillna(""), df_f.fillna("")
 
+# Cargamos los datos desde la base de datos real
 df_cli, df_fin = load_data()
 
 st.title("🖥️ Administración IPTV Pro")
@@ -132,4 +144,5 @@ with t3:
     df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce')
     ing, egr = df_fin[df_fin['Tipo']=="Ingreso"]['Monto'].sum(), df_fin[df_fin['Tipo']=="Egreso"]['Monto'].sum()
     st.metric("Utilidad Neta", f"${ing - egr:,.2f}", delta=f"Gastos: ${egr}")
+
     st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
