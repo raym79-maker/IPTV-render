@@ -2,36 +2,59 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import os
-import sqlalchemy  # Necesitas añadir esto
+import sqlalchemy
 
 # Configuración de página
 st.set_page_config(page_title="Administración IPTV Pro", layout="wide")
 
 # --- CONFIGURACIÓN DE BASE DE DATOS POSTGRES ---
 def get_engine():
-    # Railway inyecta automáticamente la variable DATABASE_URL
     url = os.getenv("DATABASE_URL")
     if url and url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     return sqlalchemy.create_engine(url)
 
+def inicializar_tablas():
+    engine = get_engine()
+    # SQL para crear las tablas con las columnas que ya tenías en tus CSV
+    with engine.connect() as conn:
+        conn.execute(sqlalchemy.text("""
+            CREATE TABLE IF NOT EXISTS clientes (
+                id SERIAL PRIMARY KEY,
+                "Usuario" TEXT,
+                "Servicio" TEXT,
+                "Vencimiento" TEXT,
+                "WhatsApp" TEXT,
+                "Observaciones" TEXT
+            );
+        """))
+        conn.execute(sqlalchemy.text("""
+            CREATE TABLE IF NOT EXISTS finanzas (
+                id SERIAL PRIMARY KEY,
+                "Fecha" TEXT,
+                "Tipo" TEXT,
+                "Detalle" TEXT,
+                "Monto" FLOAT
+            );
+        """))
+        conn.commit()
+
 def load_data():
     engine = get_engine()
-    try:
-        # Intentamos leer de Postgres en lugar de archivos CSV
-        df_c = pd.read_sql("SELECT * FROM clientes", engine)
-    except:
-        # Si la tabla no existe aún, creamos un DataFrame vacío con tus columnas
-        df_c = pd.DataFrame(columns=['Usuario','Servicio','Vencimiento','WhatsApp','Observaciones'])
+    # Aseguramos que las tablas existan antes de leer
+    inicializar_tablas()
     
-    try:
-        df_f = pd.read_sql("SELECT * FROM finanzas", engine)
-    except:
-        df_f = pd.DataFrame(columns=['Fecha','Tipo','Detalle','Monto'])
+    # Leemos los datos directamente a DataFrames
+    df_c = pd.read_sql("SELECT * FROM clientes", engine)
+    df_f = pd.read_sql("SELECT * FROM finanzas", engine)
+    
+    # Eliminamos la columna 'id' para que no interfiera con tu lógica de Pandas actual
+    if 'id' in df_c.columns: df_c = df_c.drop(columns=['id'])
+    if 'id' in df_f.columns: df_f = df_f.drop(columns=['id'])
         
     return df_c.fillna(""), df_f.fillna("")
 
-# Cargamos los datos desde la base de datos real
+# Cargamos los datos
 df_cli, df_fin = load_data()
 
 st.title("🖥️ Administración IPTV Pro")
@@ -146,3 +169,4 @@ with t3:
     st.metric("Utilidad Neta", f"${ing - egr:,.2f}", delta=f"Gastos: ${egr}")
 
     st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
+
