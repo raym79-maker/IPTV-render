@@ -1,2 +1,4 @@
-psycopg2-binary
+streamlit
+pandas
 sqlalchemy
+psycopg2-binary
