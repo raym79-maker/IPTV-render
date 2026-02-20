@@ -1,0 +1,45 @@
+Ese mensaje confirma que la computadora nueva no tiene Python instalado o que Windows no sabe dónde encontrarlo para ejecutar el comando.
+
+Para que tu sistema IPTV sea realmente funcional en otro equipo, el paso obligatorio es que esa computadora tenga el "motor" (Python) funcionando. Aquí tienes los pasos exactos para resolverlo de forma definitiva:
+1. Instalación Correcta en la PC Nueva
+
+Si no tienes Python, descárgalo de python.org. Al instalarlo, es vital que sigas este paso:
+
+    Al abrir el instalador, marca la casilla "Add Python to PATH" en la parte inferior de la ventana.
+
+    Sin esto, el archivo .bat siempre dará error de "comando no encontrado".
+
+2. El "Modo Portable" Real (Entorno Virtual)
+
+Si quieres evitar instalar librerías en cada PC, podemos crear una "burbuja" dentro de tu carpeta Gestion_IPTV que contenga todo lo necesario. Sigue estos pasos solo una vez en tu computadora principal:
+
+    Abre una terminal en tu carpeta y escribe:
+    python -m venv env
+
+    Esto creará una carpeta llamada env dentro de tu proyecto.
+
+    Modifica tu archivo ABRIR_GESTION.bat con este nuevo código:
+
+@echo off
+if not exist "env" (
+    echo Creando entorno virtual...
+    python -m venv env
+)
+call env\Scripts\activate
+pip install streamlit pandas
+streamlit run iptv_app.py
+pause
+
+
+
+3. ¿Por qué esto es mejor?
+
+    Independencia: Al copiar la carpeta completa (incluyendo la nueva carpeta env), ya llevas a Streamlit y Pandas contigo.
+
+    Seguridad: No ensucias la configuración de otras computadoras; todo lo que el programa necesita se queda dentro de su propia carpeta.
+
+    Tus Datos: Recuerda que tus archivos database.csv y finanzas.csv son independientes; aunque el programa falle, tu información está a salvo en esos archivos.
+
+Recomendación: Si vas a moverte mucho entre equipos, instala Python en cada uno y asegúrate de marcar la opción "Add Python to PATH". Es la única forma de que Windows reconozca los comandos.
+
+¿Te gustaría que te ayude a configurar el mensaje automático de WhatsApp ahora que ya tienes claro cómo mover tu carpeta?
