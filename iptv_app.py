@@ -9,6 +9,7 @@ st.set_page_config(page_title="Administración IPTV Pro", layout="wide")
 
 # --- CONFIGURACIÓN DE BASE DE DATOS POSTGRES ---
 def get_engine():
+    # Railway inyecta automáticamente la variable DATABASE_URL
     url = os.getenv("DATABASE_URL")
     if url and url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
@@ -16,12 +17,12 @@ def get_engine():
 
 def inicializar_tablas():
     engine = get_engine()
-    # SQL para crear las tablas con las columnas que ya tenías en tus CSV
+    # SQL para crear las tablas con las columnas originales
     with engine.connect() as conn:
         conn.execute(sqlalchemy.text("""
             CREATE TABLE IF NOT EXISTS clientes (
                 id SERIAL PRIMARY KEY,
-                "Usuario" TEXT,
+                "Usuario" TEXT UNIQUE,
                 "Servicio" TEXT,
                 "Vencimiento" TEXT,
                 "WhatsApp" TEXT,
@@ -41,34 +42,34 @@ def inicializar_tablas():
 
 def load_data():
     engine = get_engine()
-    # Aseguramos que las tablas existan antes de leer
     inicializar_tablas()
     
     # Leemos los datos directamente a DataFrames
     df_c = pd.read_sql("SELECT * FROM clientes", engine)
     df_f = pd.read_sql("SELECT * FROM finanzas", engine)
     
-    # Eliminamos la columna 'id' para que no interfiera con tu lógica de Pandas actual
-    if 'id' in df_c.columns: df_c = df_c.drop(columns=['id'])
-    if 'id' in df_f.columns: df_f = df_f.drop(columns=['id'])
-        
-    return df_c.fillna(""), df_f.fillna("")
+    # Mantenemos el ID internamente para operaciones de borrado pero lo ocultamos en la lógica
+    return df_c, df_f
 
-# Cargamos los datos
+# Cargamos los datos globales
 df_cli, df_fin = load_data()
+
+# Limpiamos DF para visualización (quitando ID)
+df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
+df_fin_view = df_fin.drop(columns=['id']) if 'id' in df_fin.columns else df_fin
 
 st.title("🖥️ Administración IPTV Pro")
 
 t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Créditos", "📊 Reporte Financiero"])
 
-# --- PESTAÑA 1: CLIENTES (CON COLORES Y ELIMINACIÓN) ---
+# --- PESTAÑA 1: CLIENTES ---
 with t1:
     st.subheader("📝 Gestión de Clientes")
     busqueda = st.text_input("🔍 Buscar cliente:", "")
     
-    df_mostrar = df_cli.copy()
+    df_mostrar = df_cli_view.copy()
     if busqueda:
-        df_mostrar = df_cli[df_cli['Usuario'].str.contains(busqueda, case=False, na=False)]
+        df_mostrar = df_cli_view[df_cli_view['Usuario'].str.contains(busqueda, case=False, na=False)]
 
     def color_vencimiento(val):
         try:
@@ -92,32 +93,37 @@ with t1:
         use_container_width=True, hide_index=True, key="editor_final"
     )
 
-    col_btn1, col_btn2 = st.columns([1, 4])
-    with col_btn1:
-        if st.button("💾 Guardar Cambios"):
-            try:
-                if busqueda: df_cli.update(df_editado)
-                else: df_cli = df_editado
-                df_cli.to_csv('database.csv', index=False)
-                st.success("¡Guardado!")
-                st.rerun()
-            except: st.error("Cierra el Excel")
+    if st.button("💾 Guardar Cambios en Notas/WhatsApp"):
+        engine = get_engine()
+        # Actualización fila por fila en la DB basada en el Usuario
+        with engine.connect() as conn:
+            for _, row in df_editado.iterrows():
+                conn.execute(
+                    sqlalchemy.text('UPDATE clientes SET "WhatsApp" = :w, "Observaciones" = :o WHERE "Usuario" = :u'),
+                    {"w": row["WhatsApp"], "o": row["Observaciones"], "u": row["Usuario"]}
+                )
+            conn.commit()
+        st.success("¡Base de Datos Actualizada!")
+        st.rerun()
 
     st.divider()
     
-    # SECCIÓN RESTAURADA: ELIMINAR USUARIO
     st.subheader("🗑️ Eliminar Usuario")
     u_del = st.selectbox("Selecciona para borrar:", ["---"] + list(df_cli['Usuario'].unique()))
     if st.button("❌ Confirmar Eliminación"):
         if u_del != "---":
-            new_df = df_cli[df_cli['Usuario'] != u_del]
-            new_df.to_csv('database.csv', index=False)
-            st.success(f"Usuario {u_del} eliminado")
+            engine = get_engine()
+            with engine.connect() as conn:
+                conn.execute(sqlalchemy.text('DELETE FROM clientes WHERE "Usuario" = :u'), {"u": u_del})
+                conn.commit()
+            st.success(f"Usuario {u_del} eliminado de la base de datos")
             st.rerun()
 
-# --- PESTAÑA 2: VENTAS (RENOVACIÓN CON CRÉDITOS) ---
+# --- PESTAÑA 2: VENTAS ---
 with t2:
     c1, c2, c3 = st.columns(3)
+    engine = get_engine()
+    
     with c1:
         st.subheader("🔄 Renovación")
         u_s = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()))
@@ -127,13 +133,19 @@ with t2:
             vl = st.number_input("Precio ($):", min_value=0.0)
             if st.form_submit_button("💰 Registrar Venta"):
                 if u_s != "---":
-                    idx = df_cli[df_cli['Usuario'] == u_s].index[0]
                     fv = (datetime.now() + timedelta(days=cant_c*30)).strftime('%d-%b').lower()
-                    df_cli.at[idx, 'Vencimiento'], df_cli.at[idx, 'Servicio'] = fv, pr
-                    df_cli.to_csv('database.csv', index=False)
-                    # Finanzas
-                    ni = pd.DataFrame([{"Fecha": datetime.now().strftime("%Y-%m-%d"), "Tipo": "Ingreso", "Detalle": f"Renov {cant_c}m {pr}: {u_s}", "Monto": vl}])
-                    pd.concat([df_fin, ni], ignore_index=True).to_csv('finanzas.csv', index=False)
+                    with engine.connect() as conn:
+                        # Actualizar Cliente
+                        conn.execute(
+                            sqlalchemy.text('UPDATE clientes SET "Vencimiento" = :v, "Servicio" = :s WHERE "Usuario" = :u'),
+                            {"v": fv, "s": pr, "u": u_s}
+                        )
+                        # Registrar Finanza
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renov {cant_c}m {pr}: {u_s}", "m": vl}
+                        )
+                        conn.commit()
                     st.rerun()
 
     with c2:
@@ -142,12 +154,21 @@ with t2:
             nu = st.text_input("Usuario")
             np = st.selectbox("Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
             nw = st.text_input("WhatsApp")
-            ni = st.number_input("Precio ($) ", min_value=0.0)
+            ni_val = st.number_input("Precio ($) ", min_value=0.0)
             if st.form_submit_button("💾 Crear"):
                 if nu:
                     fv = (datetime.now() + timedelta(days=30)).strftime('%d-%b').lower()
-                    nr = pd.DataFrame([{"Usuario": nu, "Servicio": np, "Vencimiento": fv, "WhatsApp": nw, "Observaciones": ""}])
-                    pd.concat([df_cli, nr], ignore_index=True).to_csv('database.csv', index=False)
+                    with engine.connect() as conn:
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones") VALUES (:u, :s, :v, :w, :o)'),
+                            {"u": nu, "s": np, "v": fv, "w": nw, "o": ""}
+                        )
+                        if ni_val > 0:
+                            conn.execute(
+                                sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                                {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo: {nu}", "m": ni_val}
+                            )
+                        conn.commit()
                     st.rerun()
 
     with c3:
@@ -157,16 +178,22 @@ with t2:
             mnt_e = st.number_input("Costo pagado ($) ", min_value=0.0)
             if st.form_submit_button("📦 Registrar Compra"):
                 if det_e and mnt_e > 0:
-                    ne = pd.DataFrame([{"Fecha": datetime.now().strftime("%Y-%m-%d"), "Tipo": "Egreso", "Detalle": det_e, "Monto": mnt_e}])
-                    pd.concat([df_fin, ne], ignore_index=True).to_csv('finanzas.csv', index=False)
+                    with engine.connect() as conn:
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Egreso", "d": det_e, "m": mnt_e}
+                        )
+                        conn.commit()
                     st.rerun()
 
 # --- PESTAÑA 3: REPORTES ---
 with t3:
     st.subheader("📊 Reporte Financiero")
-    df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce')
-    ing, egr = df_fin[df_fin['Tipo']=="Ingreso"]['Monto'].sum(), df_fin[df_fin['Tipo']=="Egreso"]['Monto'].sum()
-    st.metric("Utilidad Neta", f"${ing - egr:,.2f}", delta=f"Gastos: ${egr}")
-
-    st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
-
+    if not df_fin_view.empty:
+        df_fin_view['Monto'] = pd.to_numeric(df_fin_view['Monto'], errors='coerce')
+        ing = df_fin_view[df_fin_view['Tipo']=="Ingreso"]['Monto'].sum()
+        egr = df_fin_view[df_fin_view['Tipo']=="Egreso"]['Monto'].sum()
+        st.metric("Utilidad Neta", f"${ing - egr:,.2f}", delta=f"Gastos: ${egr}")
+        st.dataframe(df_fin_view.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay datos financieros registrados.")
