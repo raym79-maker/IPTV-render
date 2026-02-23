@@ -76,3 +76,60 @@ with t1:
 
     def color_vencimiento(val):
         try:
+            val_str = str(val).strip().lower()
+            # Línea corregida:
+            fecha_v = datetime.strptime(f"{val_str}-{datetime.now().year}", "%d-%b-%Y")
+            dias = (fecha_v - datetime.now()).days
+            if dias <= 2: return 'background-color: #ff4b4b; color: white'
+            elif dias <= 5: return 'background-color: #ffeb3b; color: black'
+            return ''
+        except: return ''
+
+    # Editor de datos
+    df_editado = st.data_editor(
+        df_mostrar.style.applymap(color_vencimiento, subset=['Vencimiento']),
+        column_config={
+            "WhatsApp": st.column_config.TextColumn("WhatsApp"),
+            "Observaciones": st.column_config.TextColumn("Observaciones"),
+            "Usuario": st.column_config.Column(disabled=True),
+            "Servicio": st.column_config.Column(disabled=True),
+            "Vencimiento": st.column_config.Column(disabled=True)
+        },
+        use_container_width=True, hide_index=True, key="editor_final"
+    )
+
+    if st.button("💾 Guardar Cambios en Notas/WhatsApp"):
+        engine = get_engine()
+        with engine.connect() as conn:
+            for _, row in df_editado.iterrows():
+                conn.execute(
+                    sqlalchemy.text('UPDATE clientes SET "WhatsApp" = :w, "Observaciones" = :o WHERE "Usuario" = :u'),
+                    {"w": str(row["WhatsApp"]), "o": str(row["Observaciones"]), "u": row["Usuario"]}
+                )
+            conn.commit()
+        st.success("¡Base de Datos Actualizada!")
+        st.rerun()
+
+    st.divider()
+    
+    st.subheader("🗑️ Eliminar Usuario")
+    u_del = st.selectbox("Selecciona para borrar:", ["---"] + list(df_cli['Usuario'].unique()))
+    if st.button("❌ Confirmar Eliminación"):
+        if u_del != "---":
+            engine = get_engine()
+            with engine.connect() as conn:
+                conn.execute(sqlalchemy.text('DELETE FROM clientes WHERE "Usuario" = :u'), {"u": u_del})
+                conn.commit()
+            st.success(f"Usuario {u_del} eliminado")
+            st.rerun()
+
+# --- PESTAÑA 2: VENTAS ---
+with t2:
+    c1, c2, c3 = st.columns(3)
+    engine = get_engine()
+    
+    with c1:
+        st.subheader("🔄 Renovación")
+        u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="sb_renov")
+        with st.form("f_renov"):
+            pr = st.selectbox("Producto:", ["M
