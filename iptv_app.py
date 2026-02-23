@@ -10,7 +10,6 @@ st.set_page_config(page_title="IPTV Pro Admin", layout="wide", page_icon="🖥�
 
 # --- 2. CONEXIÓN A BASE DE DATOS ---
 def get_engine():
-    # Railway usa la variable DATABASE_URL
     url = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://", 1)
     return sqlalchemy.create_engine(url)
 
@@ -18,7 +17,7 @@ def load_data():
     engine = get_engine()
     df_c = pd.read_sql("SELECT * FROM clientes", engine)
     df_f = pd.read_sql("SELECT * FROM finanzas", engine)
-    # Limpieza de nulos para evitar errores en el editor
+    # Limpieza de nulos para el editor
     if 'Observaciones' in df_c.columns:
         df_c['Observaciones'] = df_c['Observaciones'].astype(str).replace(['None', 'nan', '<NA>', 'nan '], '')
     return df_c, df_f
@@ -30,7 +29,7 @@ df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 # --- 4. INTERFAZ PRINCIPAL ---
 st.title("🖥️ Administración IPTV Pro")
 
-t1, t2, t3 = st.tabs(["📋 Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
+t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
 
 # PESTAÑA 1: GESTIÓN DE CLIENTES
 with t1:
@@ -49,11 +48,40 @@ with t1:
             return ''
         except: return ''
 
-    # Editor de datos con configuración corregida
+    # Editor de datos corregido
     df_editado = st.data_editor(
         df_m.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
             "WhatsApp": st.column_config.TextColumn("WhatsApp"),
             "Observaciones": st.column_config.TextColumn("Observaciones"),
             "Usuario": st.column_config.Column(disabled=True),
-            "Servicio":
+            "Servicio": st.column_config.Column(disabled=True),
+            "Vencimiento": st.column_config.Column(disabled=True)
+        },
+        use_container_width=True, 
+        hide_index=True
+    )
+
+    if st.button("💾 Guardar Cambios"):
+        engine = get_engine()
+        with engine.connect() as conn:
+            for _, r in df_editado.iterrows():
+                conn.execute(
+                    sqlalchemy.text('UPDATE clientes SET "WhatsApp"=:w, "Observaciones"=:o WHERE "Usuario"=:u'),
+                    {"w": str(r["WhatsApp"]), "o": str(r["Observaciones"]), "u": r["Usuario"]}
+                )
+            conn.commit()
+        st.success("¡Base de Datos Actualizada!")
+        st.rerun()
+
+# PESTAÑA 2: VENTAS Y RENOVACIÓN
+with t2:
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("🔄 Registrar Renovación")
+        u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="sel_renov")
+        with st.form("form_renov"):
+            prod = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
+            meses = st.number_input("Meses:", 1, 12, 1)
+            pago = st.number_input("Monto cobrado ($):", 0.0)
+            if st.form_submit_button("💰 Confirmar Pago"):
