@@ -48,11 +48,11 @@ def load_data():
     df_c = pd.read_sql("SELECT * FROM clientes", engine)
     df_f = pd.read_sql("SELECT * FROM finanzas", engine)
     
-    # LIMPIEZA CRÍTICA: Convertir Observaciones a texto para evitar errores de tipo en el editor
+    # --- CORRECCIÓN DE ERROR DE TIPO DE DATOS ---
+    # Forzamos que 'Observaciones' sea texto para que el editor de Streamlit no falle
     if 'Observaciones' in df_c.columns:
         df_c['Observaciones'] = df_c['Observaciones'].astype(str).replace(['None', 'nan', 'nan ', '<NA>'], '')
     
-    # Mantenemos el ID internamente para operaciones de borrado pero lo ocultamos en la lógica
     return df_c, df_f
 
 # Cargamos los datos globales
@@ -77,16 +77,15 @@ with t1:
 
     def color_vencimiento(val):
         try:
-            # Limpiar valor por si acaso
-            val = str(val).strip().lower()
-            fecha_v = datetime.strptime(f"{val}-{datetime.now().year}", "%d-%b-%Y")
+            val_str = str(val).strip().lower()
+            fecha_v = datetime.strptime(f"{val_str}-{datetime.now().year}", "%d-%b-%Y")
             dias = (fecha_v - datetime.now()).days
             if dias <= 2: return 'background-color: #ff4b4b; color: white'
             elif dias <= 5: return 'background-color: #ffeb3b; color: black'
             return ''
         except: return ''
 
-    # Editor de datos
+    # Editor de datos con configuración de columnas explícita
     df_editado = st.data_editor(
         df_mostrar.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
@@ -115,4 +114,88 @@ with t1:
     
     st.subheader("🗑️ Eliminar Usuario")
     u_del = st.selectbox("Selecciona para borrar:", ["---"] + list(df_cli['Usuario'].unique()))
-    if st
+    if st.button("❌ Confirmar Eliminación"):
+        if u_del != "---":
+            engine = get_engine()
+            with engine.connect() as conn:
+                conn.execute(sqlalchemy.text('DELETE FROM clientes WHERE "Usuario" = :u'), {"u": u_del})
+                conn.commit()
+            st.success(f"Usuario {u_del} eliminado")
+            st.rerun()
+
+# --- PESTAÑA 2: VENTAS ---
+with t2:
+    c1, c2, c3 = st.columns(3)
+    engine = get_engine()
+    
+    with c1:
+        st.subheader("🔄 Renovación")
+        u_s = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()))
+        with st.form("f_renov"):
+            pr = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
+            cant_c = st.number_input("Meses (Créditos):", min_value=1, value=1)
+            vl = st.number_input("Precio ($):", min_value=0.0)
+            if st.form_submit_button("💰 Registrar Venta"):
+                if u_s != "---":
+                    fv = (datetime.now() + timedelta(days=cant_c*30)).strftime('%d-%b').lower()
+                    with engine.connect() as conn:
+                        conn.execute(
+                            sqlalchemy.text('UPDATE clientes SET "Vencimiento" = :v, "Servicio" = :s WHERE "Usuario" = :u'),
+                            {"v": fv, "s": pr, "u": u_s}
+                        )
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renov {cant_c}m {pr}: {u_s}", "m": vl}
+                        )
+                        conn.commit()
+                    st.rerun()
+
+    with c2:
+        st.subheader("➕ Nuevo Registro")
+        with st.form("f_nuevo"):
+            nu = st.text_input("Usuario")
+            np = st.selectbox("Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
+            nw = st.text_input("WhatsApp")
+            ni_val = st.number_input("Precio ($) ", min_value=0.0)
+            if st.form_submit_button("💾 Crear"):
+                if nu:
+                    fv = (datetime.now() + timedelta(days=30)).strftime('%d-%b').lower()
+                    with engine.connect() as conn:
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones") VALUES (:u, :s, :v, :w, :o)'),
+                            {"u": nu, "s": np, "v": fv, "w": nw, "o": ""}
+                        )
+                        if ni_val > 0:
+                            conn.execute(
+                                sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                                {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo: {nu}", "m": ni_val}
+                            )
+                        conn.commit()
+                    st.rerun()
+
+    with c3:
+        st.subheader("💳 Egresos / Créditos")
+        with st.form("f_egr"):
+            det_e = st.text_input("Detalle (Ej: 50 Créditos M327)")
+            mnt_e = st.number_input("Costo pagado ($) ", min_value=0.0)
+            if st.form_submit_button("📦 Registrar Compra"):
+                if det_e and mnt_e > 0:
+                    with engine.connect() as conn:
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Egreso", "d": det_e, "m": mnt_e}
+                        )
+                        conn.commit()
+                    st.rerun()
+
+# --- PESTAÑA 3: REPORTES ---
+with t3:
+    st.subheader("📊 Reporte Financiero")
+    if not df_fin_view.empty:
+        df_fin_view['Monto'] = pd.to_numeric(df_fin_view['Monto'], errors='coerce')
+        ing = df_fin_view[df_fin_view['Tipo']=="Ingreso"]['Monto'].sum()
+        egr = df_fin_view[df_fin_view['Tipo']=="Egreso"]['Monto'].sum()
+        st.metric("Utilidad Neta", f"${ing - egr:,.2f}", delta=f"Gastos: ${egr}")
+        st.dataframe(df_fin_view.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay datos financieros registrados.")
