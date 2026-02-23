@@ -28,7 +28,7 @@ df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 # --- 4. INTERFAZ PRINCIPAL ---
 st.title("🖥️ Administración IPTV Pro")
 
-t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Créditos", "📊 Reporte Financiero"])
+t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Gestión", "📊 Reporte Financiero"])
 
 # PESTAÑA 1: LISTA DE CLIENTES
 with t1:
@@ -71,7 +71,7 @@ with t1:
         st.success("¡Datos actualizados!")
         st.rerun()
 
-# PESTAÑA 2: VENTAS Y CRÉDITOS (LAS 3 COLUMNAS + ELIMINAR)
+# PESTAÑA 2: VENTAS Y CRÉDITOS (AQUÍ ESTÁN TUS 3 COLUMNAS)
 with t2:
     c1, c2, c3 = st.columns(3)
     engine = get_engine()
@@ -81,10 +81,10 @@ with t2:
         st.subheader("🔄 Renovación")
         u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="renov_u")
         with st.form("form_renov"):
-            prod_r = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
-            meses_r = st.number_input("Meses (Créditos):", 1, 12, 1)
+            prod_r = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"], key="prod_sel")
+            meses_r = st.number_input("Meses:", 1, 12, 1)
             pago_r = st.number_input("Precio ($):", 0.0)
-            if st.form_submit_button("💰 Registrar Venta"):
+            if st.form_submit_button("💰 Registrar Renovación"):
                 if u_renov != "---":
                     fv = (datetime.now() + timedelta(days=meses_r*30)).strftime('%d-%b').lower()
                     with engine.connect() as conn:
@@ -102,9 +102,9 @@ with t2:
             new_u = st.text_input("Usuario")
             new_p = st.selectbox("Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
             new_w = st.text_input("WhatsApp")
-            new_m = st.number_input("Meses (Créditos)", 1, 12, 1)
-            new_i = st.number_input("Precio inicial ($)", 0.0)
-            if st.form_submit_button("💾 Crear"):
+            new_m = st.number_input("Meses iniciales", 1, 12, 1)
+            new_i = st.number_input("Precio cobrado ($)", 0.0)
+            if st.form_submit_button("💾 Crear Cliente"):
                 if new_u:
                     fv_n = (datetime.now() + timedelta(days=new_m*30)).strftime('%d-%b').lower()
                     with engine.connect() as conn:
@@ -119,10 +119,34 @@ with t2:
     with c3:
         st.subheader("💳 Egresos / Créditos")
         with st.form("form_egreso"):
-            det_e = st.text_input("Detalle (Ej: 50 Créditos M327)")
+            det_e = st.text_input("Detalle (Ej: 50 Créditos)")
             costo_e = st.number_input("Costo pagado ($):", 0.0)
-            if st.form_submit_button("📦 Registrar Compra"):
+            if st.form_submit_button("📦 Registrar Gasto"):
                 if det_e:
                     with engine.connect() as conn:
                         conn.execute(sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                                     {"f": datetime.now().strftime("%Y-%m-%
+                                     {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Egreso", "d": det_e, "m": costo_e})
+                        conn.commit()
+                    st.rerun()
+
+    st.divider()
+    st.subheader("🗑️ Eliminar Usuario")
+    u_del = st.selectbox("Selecciona para borrar:", ["---"] + list(df_cli['Usuario'].unique()), key="del_u")
+    if st.button("❌ Confirmar Eliminación"):
+        if u_del != "---":
+            with engine.connect() as conn:
+                conn.execute(sqlalchemy.text('DELETE FROM clientes WHERE "Usuario"=:u'), {"u": u_del})
+                conn.commit()
+            st.rerun()
+
+# PESTAÑA 3: REPORTE FINANCIERO
+with t3:
+    st.subheader("📊 Reporte de Utilidades")
+    if not df_fin.empty:
+        df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce')
+        ing = df_fin[df_fin['Tipo']=="Ingreso"]['Monto'].sum()
+        egr = df_fin[df_fin['Tipo']=="Egreso"]['Monto'].sum()
+        st.metric("Balance Neto", f"${ing - egr:,.2f}", f"Gastos: ${egr:,.2f}")
+        st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay movimientos registrados aún.")
