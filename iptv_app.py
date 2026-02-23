@@ -201,3 +201,15 @@ with t3:
         st.dataframe(df_fin_view.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("No hay datos financieros registrados.")
+
+# --- BOTÓN PARA EXPORTAR ---
+        st.divider()
+        csv = df_fin_view.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Descargar Reporte en Excel (CSV)",
+            data=csv,
+            file_name=f'reporte_finanzas_{datetime.now().strftime("%Y-%m-%d")}.csv',
+            mime='text/csv',
+        )
+    else:
+        st.info("No hay datos financieros registrados.")
