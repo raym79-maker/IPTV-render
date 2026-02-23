@@ -4,10 +4,10 @@ from datetime import datetime, timedelta
 import os
 import sqlalchemy
 
-# Configuración de página
+# --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Administración IPTV Pro", layout="wide")
 
-# --- CONFIGURACIÓN DE BASE DE DATOS POSTGRES ---
+# --- 2. CONFIGURACIÓN DE BASE DE DATOS ---
 def get_engine():
     # Railway inyecta automáticamente la variable DATABASE_URL
     url = os.getenv("DATABASE_URL")
@@ -17,7 +17,6 @@ def get_engine():
 
 def inicializar_tablas():
     engine = get_engine()
-    # SQL para crear las tablas con las columnas originales
     with engine.connect() as conn:
         conn.execute(sqlalchemy.text("""
             CREATE TABLE IF NOT EXISTS clientes (
@@ -48,7 +47,7 @@ def load_data():
     df_c = pd.read_sql("SELECT * FROM clientes", engine)
     df_f = pd.read_sql("SELECT * FROM finanzas", engine)
     
-    # CORRECCIÓN DE ERROR DE TIPO DE DATOS
+    # CORRECCIÓN DE ERROR DE TIPO DE DATOS EN OBSERVACIONES
     if 'Observaciones' in df_c.columns:
         df_c['Observaciones'] = df_c['Observaciones'].astype(str).replace(['None', 'nan', 'nan ', '<NA>'], '')
     
@@ -57,18 +56,19 @@ def load_data():
 # Cargamos los datos globales
 df_cli, df_fin = load_data()
 
-# Limpiamos DF para visualización (quitando ID)
+# Limpiamos DF para visualización (quitando ID interno)
 df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 df_fin_view = df_fin.drop(columns=['id']) if 'id' in df_fin.columns else df_fin
 
+# --- 3. INTERFAZ PRINCIPAL ---
 st.title("🖥️ Administración IPTV Pro")
 
 t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Créditos", "📊 Reporte Financiero"])
 
-# --- PESTAÑA 1: CLIENTES ---
+# --- PESTAÑA 1: GESTIÓN DE CLIENTES ---
 with t1:
     st.subheader("📝 Gestión de Clientes")
-    busqueda = st.text_input("🔍 Buscar cliente:", "")
+    busqueda = st.text_input("🔍 Buscar cliente por nombre:", "")
     
     df_mostrar = df_cli_view.copy()
     if busqueda:
@@ -87,7 +87,7 @@ with t1:
         except:
             return ''
 
-    # Editor de datos
+    # Editor de datos para notas y whatsapp
     df_editado = st.data_editor(
         df_mostrar.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
@@ -115,29 +115,30 @@ with t1:
     st.divider()
     
     st.subheader("🗑️ Eliminar Usuario")
-    u_del = st.selectbox("Selecciona para borrar:", ["---"] + list(df_cli['Usuario'].unique()))
+    u_del = st.selectbox("Selecciona un usuario para dar de baja:", ["---"] + list(df_cli['Usuario'].unique()))
     if st.button("❌ Confirmar Eliminación"):
         if u_del != "---":
             engine = get_engine()
             with engine.connect() as conn:
                 conn.execute(sqlalchemy.text('DELETE FROM clientes WHERE "Usuario" = :u'), {"u": u_del})
                 conn.commit()
-            st.success(f"Usuario {u_del} eliminado")
+            st.success(f"Usuario {u_del} eliminado correctamente")
             st.rerun()
 
-# --- PESTAÑA 2: VENTAS ---
+# --- PESTAÑA 2: VENTAS Y GESTIÓN DE CRÉDITOS ---
 with t2:
+    # Las 3 columnas originales que mencionaste
     c1, c2, c3 = st.columns(3)
     engine = get_engine()
     
     with c1:
         st.subheader("🔄 Renovación")
-        u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="sb_renov")
+        u_renov = st.selectbox("Elegir cliente para renovar:", ["---"] + list(df_cli['Usuario'].unique()), key="sb_renov")
         with st.form("f_renov"):
             pr = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
-            cant_c = st.number_input("Meses (Créditos):", min_value=1, value=1)
-            vl = st.number_input("Precio ($):", min_value=0.0)
-            if st.form_submit_button("💰 Registrar Venta"):
+            cant_c = st.number_input("Meses a renovar:", min_value=1, value=1)
+            vl = st.number_input("Precio cobrado ($):", min_value=0.0)
+            if st.form_submit_button("💰 Registrar Renovación"):
                 if u_renov != "---":
                     fv = (datetime.now() + timedelta(days=cant_c*30)).strftime('%d-%b').lower()
                     with engine.connect() as conn:
@@ -155,11 +156,11 @@ with t2:
     with c2:
         st.subheader("➕ Nuevo Registro")
         with st.form("f_nuevo"):
-            nu = st.text_input("Usuario")
-            np = st.selectbox("Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
-            nw = st.text_input("WhatsApp")
-            ni_val = st.number_input("Precio ($) ", min_value=0.0)
-            if st.form_submit_button("💾 Crear"):
+            nu = st.text_input("Nombre de Usuario")
+            np = st.selectbox("Elegir Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
+            nw = st.text_input("Número de WhatsApp")
+            ni_val = st.number_input("Precio de venta ($)", min_value=0.0)
+            if st.form_submit_button("💾 Crear Usuario"):
                 if nu:
                     fv = (datetime.now() + timedelta(days=30)).strftime('%d-%b').lower()
                     with engine.connect() as conn:
@@ -178,9 +179,9 @@ with t2:
     with c3:
         st.subheader("💳 Egresos / Créditos")
         with st.form("f_egr"):
-            det_e = st.text_input("Detalle (Ej: 50 Créditos M327)")
-            mnt_e = st.number_input("Costo pagado ($) ", min_value=0.0)
-            if st.form_submit_button("📦 Registrar Compra"):
+            det_e = st.text_input("Detalle del gasto (Ej: Compra de créditos)")
+            mnt_e = st.number_input("Costo total pagado ($)", min_value=0.0)
+            if st.form_submit_button("📦 Registrar Gasto"):
                 if det_e and mnt_e > 0:
                     with engine.connect() as conn:
                         conn.execute(
@@ -190,14 +191,26 @@ with t2:
                         conn.commit()
                     st.rerun()
 
-# --- PESTAÑA 3: REPORTES ---
+# --- PESTAÑA 3: REPORTES FINANCIEROS Y EXPORTACIÓN ---
 with t3:
-    st.subheader("📊 Reporte Financiero")
+    st.subheader("📊 Resumen de Utilidades")
     if not df_fin_view.empty:
         df_fin_view['Monto'] = pd.to_numeric(df_fin_view['Monto'], errors='coerce')
         ing = df_fin_view[df_fin_view['Tipo']=="Ingreso"]['Monto'].sum()
         egr = df_fin_view[df_fin_view['Tipo']=="Egreso"]['Monto'].sum()
-        st.metric("Utilidad Neta", f"${ing - egr:,.2f}", delta=f"Gastos: ${egr}")
+        
+        st.metric("Utilidad Actual", f"${ing - egr:,.2f}", delta=f"Gastos totales: ${egr}")
         st.dataframe(df_fin_view.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
+
+        # --- FUNCIÓN DE EXPORTACIÓN (Botón de Excel) ---
+        st.divider()
+        st.write("📂 **Exportar Contabilidad**")
+        csv_data = df_fin_view.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Descargar historial financiero para Excel",
+            data=csv_data,
+            file_name=f'reporte_iptv_{datetime.now().strftime("%Y-%m-%d")}.csv',
+            mime='text/csv',
+        )
     else:
-        st.info("No hay datos financieros registrados.")
+        st.info("Aún no hay movimientos financieros registrados.")
