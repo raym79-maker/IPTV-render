@@ -71,7 +71,7 @@ with t1:
         st.success("¡Datos actualizados!")
         st.rerun()
 
-# PESTAÑA 2: VENTAS Y CRÉDITOS (TUS 3 COLUMNAS)
+# PESTAÑA 2: VENTAS Y CRÉDITOS (LAS 3 COLUMNAS + ELIMINAR)
 with t2:
     c1, c2, c3 = st.columns(3)
     engine = get_engine()
@@ -81,21 +81,17 @@ with t2:
         st.subheader("🔄 Renovación")
         u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="renov_u")
         with st.form("form_renov"):
-            prod_r = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"], key="prod_r")
-            meses_r = st.number_input("Meses:", 1, 12, 1, key="mes_r")
-            pago_r = st.number_input("Precio ($):", 0.0, key="pago_r")
+            prod_r = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
+            meses_r = st.number_input("Meses (Créditos):", 1, 12, 1)
+            pago_r = st.number_input("Precio ($):", 0.0)
             if st.form_submit_button("💰 Registrar Venta"):
                 if u_renov != "---":
                     fv = (datetime.now() + timedelta(days=meses_r*30)).strftime('%d-%b').lower()
                     with engine.connect() as conn:
-                        conn.execute(
-                            sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s WHERE "Usuario"=:u'),
-                            {"v": fv, "s": prod_r, "u": u_renov}
-                        )
-                        conn.execute(
-                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renovación {prod_r}: {u_renov}", "m": pago_r}
-                        )
+                        conn.execute(sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s WHERE "Usuario"=:u'),
+                                     {"v": fv, "s": prod_r, "u": u_renov})
+                        conn.execute(sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                                     {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renovación {prod_r}: {u_renov}", "m": pago_r})
                         conn.commit()
                     st.rerun()
 
@@ -108,18 +104,14 @@ with t2:
             new_w = st.text_input("WhatsApp")
             new_m = st.number_input("Meses (Créditos)", 1, 12, 1)
             new_i = st.number_input("Precio inicial ($)", 0.0)
-            if st.form_submit_button("💾 Crear Cliente"):
+            if st.form_submit_button("💾 Crear"):
                 if new_u:
                     fv_n = (datetime.now() + timedelta(days=new_m*30)).strftime('%d-%b').lower()
                     with engine.connect() as conn:
-                        conn.execute(
-                            sqlalchemy.text('INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones") VALUES (:u, :s, :v, :w, :o)'),
-                            {"u": new_u, "s": new_p, "v": fv_n, "w": new_w, "o": ""}
-                        )
-                        conn.execute(
-                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo: {new_u} ({new_p})", "m": new_i}
-                        )
+                        conn.execute(sqlalchemy.text('INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones") VALUES (:u, :s, :v, :w, :o)'),
+                                     {"u": new_u, "s": new_p, "v": fv_n, "w": new_w, "o": ""})
+                        conn.execute(sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                                     {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo: {new_u} ({new_p})", "m": new_i})
                         conn.commit()
                     st.rerun()
 
@@ -132,21 +124,5 @@ with t2:
             if st.form_submit_button("📦 Registrar Compra"):
                 if det_e:
                     with engine.connect() as conn:
-                        conn.execute(
-                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Egreso", "d": det_e, "m": costo_e}
-                        )
-                        conn.commit()
-                    st.rerun()
-
-# PESTAÑA 3: REPORTE FINANCIERO
-with t3:
-    st.subheader("📊 Reporte de Utilidades")
-    if not df_fin.empty:
-        df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce')
-        ing = df_fin[df_fin['Tipo']=="Ingreso"]['Monto'].sum()
-        egr = df_fin[df_fin['Tipo']=="Egreso"]['Monto'].sum()
-        st.metric("Balance Neto", f"${ing - egr:,.2f}", f"Gastos registrados: ${egr:,.2f}")
-        st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay movimientos registrados.")
+                        conn.execute(sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                                     {"f": datetime.now().strftime("%Y-%m-%
