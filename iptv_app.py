@@ -13,16 +13,23 @@ def check_password():
     if st.session_state.get("password_correct", False):
         return True
 
+    # Leemos las variables de Railway
+    admin_user = os.getenv("ADMIN_USER")
+    admin_pass = os.getenv("ADMIN_PASSWORD")
+
     with st.form("login_form"):
         st.title("🔐 Acceso Administrativo")
         u = st.text_input("Usuario")
         p = st.text_input("Contraseña", type="password")
         if st.form_submit_button("Entrar"):
-            if u == os.getenv("ADMIN_USER") and p == os.getenv("ADMIN_PASSWORD"):
+            # Validación robusta (eliminando espacios accidentales)
+            if admin_user and admin_pass and u.strip() == admin_user.strip() and p.strip() == admin_pass.strip():
                 st.session_state["password_correct"] = True
                 st.rerun()
             else:
                 st.error("❌ Credenciales incorrectas")
+                if not admin_user or not admin_pass:
+                    st.warning("⚠️ Railway no detecta ADMIN_USER o ADMIN_PASSWORD en Variables.")
     return False
 
 if not check_password():
@@ -68,7 +75,6 @@ with t1:
             return ''
         except: return ''
 
-    # EDITOR DE DATOS
     df_editado = st.data_editor(
         df_m.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
@@ -78,13 +84,11 @@ with t1:
             "Servicio": st.column_config.Column(disabled=True),
             "Vencimiento": st.column_config.Column(disabled=True)
         },
-        use_container_width=True, 
-        hide_index=True
+        use_container_width=True, hide_index=True
     )
 
     if st.button("💾 Guardar Cambios"):
         engine = get_engine()
-        # CORRECCIÓN DE IDENTACIÓN AQUÍ:
         with engine.connect() as conn:
             for _, r in df_editado.iterrows():
                 conn.execute(
@@ -103,11 +107,37 @@ with t2:
         u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="sel_renov")
         with st.form("form_renov"):
             prod = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
-            meses = st.number_input("Meses (Créditos):", 1, 12, 1)
+            meses = st.number_input("Meses:", 1, 12, 1)
             pago = st.number_input("Monto cobrado ($):", 0.0)
             if st.form_submit_button("💰 Confirmar Pago"):
                 if u_renov != "---":
                     fv = (datetime.now() + timedelta(days=meses*30)).strftime('%d-%b').lower()
                     with get_engine().connect() as conn:
                         conn.execute(
-                            sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s
+                            sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s WHERE "Usuario"=:u'),
+                            {"v": fv, "s": prod, "u": u_renov}
+                        )
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renovación {prod}: {u_renov}", "m": pago}
+                        )
+                        conn.commit()
+                    st.rerun()
+
+    with c2:
+        st.subheader("📲 Recordatorio WhatsApp")
+        if u_renov != "---":
+            row_sel = df_cli[df_cli['Usuario'] == u_renov].iloc[0]
+            tel = str(row_sel['WhatsApp']).replace(" ", "").replace("+", "")
+            msg = urllib.parse.quote(f"Hola {u_renov}, tu servicio de IPTV vence el {row_sel['Vencimiento']}. ¿Deseas renovar?")
+            st.link_button(f"Enviar mensaje a {u_renov}", f"https://wa.me/{tel}?text={msg}")
+
+# PESTAÑA 3: REPORTES FINANCIEROS
+with t3:
+    st.subheader("📊 Balance Financiero")
+    if not df_fin.empty:
+        df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce')
+        ingresos = df_fin[df_fin['Tipo']=="Ingreso"]['Monto'].sum()
+        egresos = df_fin[df_fin['Tipo']=="Egreso"]['Monto'].sum()
+        st.metric("Balance Neto", f"${ingresos - egresos:,.2f}", f"Gastos: ${egresos}")
+        st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
