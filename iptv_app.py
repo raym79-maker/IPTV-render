@@ -28,9 +28,9 @@ df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 # --- 4. INTERFAZ PRINCIPAL ---
 st.title("🖥️ Administración IPTV Pro")
 
-t1, t2, t3 = st.tabs(["📋 Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
+t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Créditos", "📊 Reporte Financiero"])
 
-# PESTAÑA 1: GESTIÓN DE CLIENTES
+# PESTAÑA 1: LISTA DE CLIENTES
 with t1:
     st.subheader("Clientes Activos")
     busqueda = st.text_input("🔍 Buscar por nombre:")
@@ -56,8 +56,7 @@ with t1:
             "Servicio": st.column_config.Column(disabled=True),
             "Vencimiento": st.column_config.Column(disabled=True)
         },
-        use_container_width=True, 
-        hide_index=True
+        use_container_width=True, hide_index=True
     )
 
     if st.button("💾 Guardar Cambios"):
@@ -66,4 +65,39 @@ with t1:
             for _, r in df_editado.iterrows():
                 conn.execute(
                     sqlalchemy.text('UPDATE clientes SET "WhatsApp"=:w, "Observaciones"=:o WHERE "Usuario"=:u'),
-                    {"w": str(r["WhatsApp"]), "o": str(r["Observaciones"]), "u
+                    {"w": str(r["WhatsApp"]), "o": str(r["Observaciones"]), "u": r["Usuario"]}
+                )
+            conn.commit()
+        st.success("¡Datos actualizados!")
+        st.rerun()
+
+# PESTAÑA 2: VENTAS Y CRÉDITOS (AQUÍ ESTÁN TUS 3 COLUMNAS)
+with t2:
+    c1, c2, c3 = st.columns(3)
+    engine = get_engine()
+
+    # COLUMNA 1: RENOVACIÓN
+    with c1:
+        st.subheader("🔄 Renovación")
+        u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="renov_u")
+        with st.form("form_renov"):
+            prod_r = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"], key="prod_r")
+            meses_r = st.number_input("Meses (Créditos):", 1, 12, 1, key="mes_r")
+            pago_r = st.number_input("Precio ($):", 0.0, key="pago_r")
+            if st.form_submit_button("💰 Registrar Venta"):
+                if u_renov != "---":
+                    fv = (datetime.now() + timedelta(days=meses_r*30)).strftime('%d-%b').lower()
+                    with engine.connect() as conn:
+                        conn.execute(sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s WHERE "Usuario"=:u'),
+                                     {"v": fv, "s": prod_r, "u": u_renov})
+                        conn.execute(sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                                     {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renovación {prod_r}: {u_renov}", "m": pago_r})
+                        conn.commit()
+                    st.rerun()
+
+    # COLUMNA 2: NUEVO REGISTRO
+    with c2:
+        st.subheader("➕ Nuevo Registro")
+        with st.form("form_nuevo"):
+            new_u = st.text_input("Usuario")
+            new_p = st.selectbox("Panel", ["M327", "LEDTV", "
