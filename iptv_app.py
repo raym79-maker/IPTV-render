@@ -213,3 +213,4 @@ with t3:
         )
     else:
         st.info("No hay datos financieros registrados.")
+
