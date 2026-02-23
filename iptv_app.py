@@ -68,7 +68,7 @@ with t1:
             return ''
         except: return ''
 
-    # EDITOR DE DATOS - CONFIGURACIÓN CERRADA CORRECTAMENTE
+    # EDITOR DE DATOS
     df_editado = st.data_editor(
         df_m.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
@@ -84,6 +84,7 @@ with t1:
 
     if st.button("💾 Guardar Cambios"):
         engine = get_engine()
+        # CORRECCIÓN DE IDENTACIÓN AQUÍ:
         with engine.connect() as conn:
             for _, r in df_editado.iterrows():
                 conn.execute(
@@ -94,4 +95,19 @@ with t1:
         st.success("¡Base de Datos Actualizada!")
         st.rerun()
 
-# P
+# PESTAÑA 2: VENTAS Y RENOVACIÓN
+with t2:
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("🔄 Registrar Renovación")
+        u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="sel_renov")
+        with st.form("form_renov"):
+            prod = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
+            meses = st.number_input("Meses (Créditos):", 1, 12, 1)
+            pago = st.number_input("Monto cobrado ($):", 0.0)
+            if st.form_submit_button("💰 Confirmar Pago"):
+                if u_renov != "---":
+                    fv = (datetime.now() + timedelta(days=meses*30)).strftime('%d-%b').lower()
+                    with get_engine().connect() as conn:
+                        conn.execute(
+                            sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s
