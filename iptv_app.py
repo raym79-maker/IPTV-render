@@ -194,23 +194,32 @@ with t2:
 # --- PESTAÑA 3: REPORTES FINANCIEROS Y EXPORTACIÓN ---
 with t3:
     st.subheader("📊 Resumen de Utilidades")
+    
+    # 1. Cálculos de dinero
+    df_fin_view['Monto'] = pd.to_numeric(df_fin_view['Monto'], errors='coerce')
+    ing = df_fin_view[df_fin_view['Tipo']=="Ingreso"]['Monto'].sum()
+    egr = df_fin_view[df_fin_view['Tipo']=="Egreso"]['Monto'].sum()
+    
+    # 2. Mostrar métricas
+    st.metric("Utilidad Actual", f"${ing - egr:,.2f}", delta=f"Gastos totales: ${egr}")
+    
+    # 3. Mostrar tabla si hay datos
     if not df_fin_view.empty:
-        df_fin_view['Monto'] = pd.to_numeric(df_fin_view['Monto'], errors='coerce')
-        ing = df_fin_view[df_fin_view['Tipo']=="Ingreso"]['Monto'].sum()
-        egr = df_fin_view[df_fin_view['Tipo']=="Egreso"]['Monto'].sum()
-        
-        st.metric("Utilidad Actual", f"${ing - egr:,.2f}", delta=f"Gastos totales: ${egr}")
         st.dataframe(df_fin_view.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
-
-        # --- FUNCIÓN DE EXPORTACIÓN (Botón de Excel) ---
-        st.divider()
-        st.write("📂 **Exportar Contabilidad**")
-        csv_data = df_fin_view.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Descargar historial financiero para Excel",
-            data=csv_data,
-            file_name=f'reporte_iptv_{datetime.now().strftime("%Y-%m-%d")}.csv',
-            mime='text/csv',
-        )
     else:
         st.info("Aún no hay movimientos financieros registrados.")
+
+    # 4. BOTÓN DE EXPORTAR (FUERA DEL IF PARA QUE SIEMPRE SE VEA)
+    st.divider()
+    st.write("📂 **Exportar Contabilidad**")
+    
+    # Preparamos el archivo aunque esté vacío
+    csv_data = df_fin_view.to_csv(index=False).encode('utf-8')
+    
+    st.download_button(
+        label="📥 Descargar historial financiero para Excel",
+        data=csv_data,
+        file_name=f'reporte_iptv_{datetime.now().strftime("%Y-%m-%d")}.csv',
+        mime='text/csv',
+        key="btn_descarga_final"
+    )
