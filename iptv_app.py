@@ -77,13 +77,16 @@ with t1:
     def color_vencimiento(val):
         try:
             val_str = str(val).strip().lower()
-            # Línea corregida:
+            # Ajuste de identación realizado aquí:
             fecha_v = datetime.strptime(f"{val_str}-{datetime.now().year}", "%d-%b-%Y")
             dias = (fecha_v - datetime.now()).days
-            if dias <= 2: return 'background-color: #ff4b4b; color: white'
-            elif dias <= 5: return 'background-color: #ffeb3b; color: black'
+            if dias <= 2: 
+                return 'background-color: #ff4b4b; color: white'
+            elif dias <= 5: 
+                return 'background-color: #ffeb3b; color: black'
             return ''
-        except: return ''
+        except:
+            return ''
 
     # Editor de datos
     df_editado = st.data_editor(
@@ -132,4 +135,70 @@ with t2:
         st.subheader("🔄 Renovación")
         u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="sb_renov")
         with st.form("f_renov"):
-            pr = st.selectbox("Producto:", ["M
+            pr = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
+            cant_c = st.number_input("Meses (Créditos):", min_value=1, value=1)
+            vl = st.number_input("Precio ($):", min_value=0.0)
+            if st.form_submit_button("💰 Registrar Venta"):
+                if u_renov != "---":
+                    fv = (datetime.now() + timedelta(days=cant_c*30)).strftime('%d-%b').lower()
+                    with engine.connect() as conn:
+                        conn.execute(
+                            sqlalchemy.text('UPDATE clientes SET "Vencimiento" = :v, "Servicio" = :s WHERE "Usuario" = :u'),
+                            {"v": fv, "s": pr, "u": u_renov}
+                        )
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renov {cant_c}m {pr}: {u_renov}", "m": vl}
+                        )
+                        conn.commit()
+                    st.rerun()
+
+    with c2:
+        st.subheader("➕ Nuevo Registro")
+        with st.form("f_nuevo"):
+            nu = st.text_input("Usuario")
+            np = st.selectbox("Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
+            nw = st.text_input("WhatsApp")
+            ni_val = st.number_input("Precio ($) ", min_value=0.0)
+            if st.form_submit_button("💾 Crear"):
+                if nu:
+                    fv = (datetime.now() + timedelta(days=30)).strftime('%d-%b').lower()
+                    with engine.connect() as conn:
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones") VALUES (:u, :s, :v, :w, :o)'),
+                            {"u": nu, "s": np, "v": fv, "w": nw, "o": ""}
+                        )
+                        if ni_val > 0:
+                            conn.execute(
+                                sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                                {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo: {nu}", "m": ni_val}
+                            )
+                        conn.commit()
+                    st.rerun()
+
+    with c3:
+        st.subheader("💳 Egresos / Créditos")
+        with st.form("f_egr"):
+            det_e = st.text_input("Detalle (Ej: 50 Créditos M327)")
+            mnt_e = st.number_input("Costo pagado ($) ", min_value=0.0)
+            if st.form_submit_button("📦 Registrar Compra"):
+                if det_e and mnt_e > 0:
+                    with engine.connect() as conn:
+                        conn.execute(
+                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
+                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Egreso", "d": det_e, "m": mnt_e}
+                        )
+                        conn.commit()
+                    st.rerun()
+
+# --- PESTAÑA 3: REPORTES ---
+with t3:
+    st.subheader("📊 Reporte Financiero")
+    if not df_fin_view.empty:
+        df_fin_view['Monto'] = pd.to_numeric(df_fin_view['Monto'], errors='coerce')
+        ing = df_fin_view[df_fin_view['Tipo']=="Ingreso"]['Monto'].sum()
+        egr = df_fin_view[df_fin_view['Tipo']=="Egreso"]['Monto'].sum()
+        st.metric("Utilidad Neta", f"${ing - egr:,.2f}", delta=f"Gastos: ${egr}")
+        st.dataframe(df_fin_view.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay datos financieros registrados.")
