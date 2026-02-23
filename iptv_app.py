@@ -49,7 +49,7 @@ df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 st.sidebar.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"password_correct": False}))
 st.title("🖥️ Administración IPTV Pro")
 
-t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
+t1, t2, t3 = st.tabs(["📋 Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
 
 # PESTAÑA 1: GESTIÓN DE CLIENTES
 with t1:
@@ -68,11 +68,20 @@ with t1:
             return ''
         except: return ''
 
-    # EDITOR DE DATOS (REVISADO PARA CERRAR TODOS LOS PARÉNTESIS)
+    # EDITOR DE DATOS
     df_editado = st.data_editor(
         df_m.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
             "WhatsApp": st.column_config.TextColumn("WhatsApp"),
             "Observaciones": st.column_config.TextColumn("Observaciones"),
             "Usuario": st.column_config.Column(disabled=True),
-            "Servicio": st.
+            "Servicio": st.column_config.Column(disabled=True),
+            "Vencimiento": st.column_config.Column(disabled=True)
+        },
+        use_container_width=True, 
+        hide_index=True
+    )
+
+    if st.button("💾 Guardar Cambios"):
+        engine = get_engine()
+        with engine.connect() as conn:
