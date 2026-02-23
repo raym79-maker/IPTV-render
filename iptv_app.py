@@ -49,7 +49,7 @@ df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 st.sidebar.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"password_correct": False}))
 st.title("🖥️ Administración IPTV Pro")
 
-t1, t2, t3 = st.tabs(["📋 Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
+t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
 
 # PESTAÑA 1: GESTIÓN DE CLIENTES
 with t1:
@@ -68,7 +68,7 @@ with t1:
             return ''
         except: return ''
 
-    # EDITOR DE DATOS
+    # EDITOR DE DATOS - CONFIGURACIÓN CERRADA CORRECTAMENTE
     df_editado = st.data_editor(
         df_m.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
@@ -85,3 +85,13 @@ with t1:
     if st.button("💾 Guardar Cambios"):
         engine = get_engine()
         with engine.connect() as conn:
+            for _, r in df_editado.iterrows():
+                conn.execute(
+                    sqlalchemy.text('UPDATE clientes SET "WhatsApp"=:w, "Observaciones"=:o WHERE "Usuario"=:u'),
+                    {"w": str(r["WhatsApp"]), "o": str(r["Observaciones"]), "u": r["Usuario"]}
+                )
+            conn.commit()
+        st.success("¡Base de Datos Actualizada!")
+        st.rerun()
+
+# P
