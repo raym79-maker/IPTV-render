@@ -76,5 +76,3 @@ with t1:
 
     def color_vencimiento(val):
         try:
-            val_str = str(val).strip().lower()
-            fecha_v = datetime.strptime(f"{
