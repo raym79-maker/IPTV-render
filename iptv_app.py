@@ -18,7 +18,7 @@ def load_data():
     engine = get_engine()
     df_c = pd.read_sql("SELECT * FROM clientes", engine)
     df_f = pd.read_sql("SELECT * FROM finanzas", engine)
-    # Limpieza de nulos para el editor de datos
+    # Limpieza de nulos para evitar errores en el editor
     if 'Observaciones' in df_c.columns:
         df_c['Observaciones'] = df_c['Observaciones'].astype(str).replace(['None', 'nan', '<NA>', 'nan '], '')
     return df_c, df_f
@@ -30,7 +30,7 @@ df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 # --- 4. INTERFAZ PRINCIPAL ---
 st.title("🖥️ Administración IPTV Pro")
 
-t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
+t1, t2, t3 = st.tabs(["📋 Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
 
 # PESTAÑA 1: GESTIÓN DE CLIENTES
 with t1:
@@ -49,7 +49,7 @@ with t1:
             return ''
         except: return ''
 
-    # Editor de datos corregido
+    # Editor de datos con configuración corregida
     df_editado = st.data_editor(
         df_m.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
@@ -89,36 +89,3 @@ with t2:
                 if u_renov != "---":
                     fv = (datetime.now() + timedelta(days=meses*30)).strftime('%d-%b').lower()
                     with get_engine().connect() as conn:
-                        conn.execute(
-                            sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s WHERE "Usuario"=:u'),
-                            {"v": fv, "s": prod, "u": u_renov}
-                        )
-                        conn.execute(
-                            sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renovación {prod}: {u_renov}", "m": pago}
-                        )
-                        conn.commit()
-                    st.rerun()
-
-    with c2:
-        st.subheader("📲 WhatsApp Rápido")
-        if u_renov != "---":
-            row_sel = df_cli[df_cli['Usuario'] == u_renov].iloc[0]
-            tel = str(row_sel['WhatsApp']).replace(" ", "").replace("+", "")
-            msg = urllib.parse.quote(f"Hola {u_renov}, tu servicio vence el {row_sel['Vencimiento']}. ¿Gustas renovar?")
-            st.link_button(f"Enviar mensaje a {u_renov}", f"https://wa.me/{tel}?text={msg}")
-
-# PESTAÑA 3: REPORTES FINANCIEROS
-with t3:
-    st.subheader("📊 Balance")
-    if not df_fin.empty:
-        df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce')
-        ingresos = df_fin[df_fin['Tipo']=="Ingreso"]['Monto'].sum()
-        egresos = df_fin[df_fin['Tipo']=="Egreso"]['Monto'].sum()
-        
-        # --- LÍNEA CORREGIDA AQUÍ: SE CIERRAN LAS LLAVES Y COMILLAS ---
-        st.metric("Balance Neto", f"${ingresos - egresos:,.2f}", f"Gastos: ${egresos:,.2f}")
-        
-        st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay movimientos registrados.")
