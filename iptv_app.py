@@ -5,15 +5,15 @@ import os
 import sqlalchemy
 import urllib.parse
 
-# Configuración inicial
+# --- 1. CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="IPTV Pro Admin", layout="wide", page_icon="🔐")
 
-# --- 1. SEGURIDAD (LOGIN) ---
+# --- 2. SISTEMA DE SEGURIDAD (LOGIN) ---
 def check_password():
     if st.session_state.get("password_correct", False):
         return True
 
-    with st.form("login"):
+    with st.form("login_form"):
         st.title("🔐 Acceso Administrativo")
         u = st.text_input("Usuario")
         p = st.text_input("Contraseña", type="password")
@@ -28,7 +28,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 2. BASE DE DATOS ---
+# --- 3. CONEXIÓN A BASE DE DATOS ---
 def get_engine():
     url = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://", 1)
     return sqlalchemy.create_engine(url)
@@ -38,20 +38,23 @@ def load_data():
     df_c = pd.read_sql("SELECT * FROM clientes", engine)
     df_f = pd.read_sql("SELECT * FROM finanzas", engine)
     if 'Observaciones' in df_c.columns:
-        df_c['Observaciones'] = df_c['Observaciones'].astype(str).replace(['None', 'nan', '<NA>'], '')
+        df_c['Observaciones'] = df_c['Observaciones'].astype(str).replace(['None', 'nan', '<NA>', 'nan '], '')
     return df_c, df_f
 
-# --- 3. LÓGICA PRINCIPAL ---
+# --- 4. CARGA DE DATOS ---
 df_cli, df_fin = load_data()
 df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 
+# --- 5. INTERFAZ PRINCIPAL ---
 st.sidebar.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"password_correct": False}))
 st.title("🖥️ Administración IPTV Pro")
 
-t1, t2, t3 = st.tabs(["📋 Clientes", "🛒 Ventas", "📊 Finanzas"])
+t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
 
+# PESTAÑA 1: GESTIÓN DE CLIENTES
 with t1:
-    busqueda = st.text_input("🔍 Buscar cliente:")
+    st.subheader("Clientes Activos")
+    busqueda = st.text_input("🔍 Buscar por nombre:")
     df_m = df_cli_view.copy()
     if busqueda:
         df_m = df_m[df_m['Usuario'].str.contains(busqueda, case=False, na=False)]
@@ -65,21 +68,11 @@ with t1:
             return ''
         except: return ''
 
-    # AQUÍ ESTABA EL ERROR - AHORA CERRADO CORRECTAMENTE
+    # EDITOR DE DATOS (REVISADO PARA CERRAR TODOS LOS PARÉNTESIS)
     df_editado = st.data_editor(
         df_m.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
             "WhatsApp": st.column_config.TextColumn("WhatsApp"),
             "Observaciones": st.column_config.TextColumn("Observaciones"),
             "Usuario": st.column_config.Column(disabled=True),
-            "Servicio": st.column_config.Column(disabled=True),
-            "Vencimiento": st.column_config.Column(disabled=True)
-        },
-        use_container_width=True, hide_index=True
-    )
-
-    if st.button("💾 Guardar Cambios"):
-        engine = get_engine()
-        with engine.connect() as conn:
-            for _, r in df_editado.iterrows():
-                conn.execute(sqlalchemy.text('UPDATE clientes SET "WhatsApp"=:w, "Observ
+            "Servicio": st.
