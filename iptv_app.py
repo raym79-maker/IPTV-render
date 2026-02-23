@@ -71,7 +71,7 @@ with t1:
         st.success("¡Datos actualizados!")
         st.rerun()
 
-# PESTAÑA 2: VENTAS Y CRÉDITOS (AQUÍ ESTÁN TUS 3 COLUMNAS)
+# PESTAÑA 2: VENTAS Y CRÉDITOS (TUS 3 COLUMNAS)
 with t2:
     c1, c2, c3 = st.columns(3)
     engine = get_engine()
@@ -88,16 +88,4 @@ with t2:
                 if u_renov != "---":
                     fv = (datetime.now() + timedelta(days=meses_r*30)).strftime('%d-%b').lower()
                     with engine.connect() as conn:
-                        conn.execute(sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s WHERE "Usuario"=:u'),
-                                     {"v": fv, "s": prod_r, "u": u_renov})
-                        conn.execute(sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                                     {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renovación {prod_r}: {u_renov}", "m": pago_r})
-                        conn.commit()
-                    st.rerun()
-
-    # COLUMNA 2: NUEVO REGISTRO
-    with c2:
-        st.subheader("➕ Nuevo Registro")
-        with st.form("form_nuevo"):
-            new_u = st.text_input("Usuario")
-            new_p = st.selectbox("Panel", ["M327", "LEDTV", "
+                        conn.execute(sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s WHERE "Usuario"=:
