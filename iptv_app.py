@@ -1,11 +1,29 @@
 import streamlit as st
-import pandas as pd
-from datetime import datetime, timedelta
 import os
-import sqlalchemy
 
-# Configuración de página
-st.set_page_config(page_title="Administración IPTV Pro", layout="wide")
+# --- SISTEMA DE SEGURIDAD ---
+def check_password():
+    def login_form():
+        with st.form("login"):
+            st.subheader("🔐 Acceso Administrativo")
+            user = st.text_input("Usuario")
+            password = st.text_input("Contraseña", type="password")
+            submit = st.form_submit_button("Entrar")
+            if submit:
+                # Comparamos con las variables de Railway
+                if user == os.getenv("ADMIN_USER") and password == os.getenv("ADMIN_PASSWORD"):
+                    st.session_state["password_correct"] = True
+                    st.rerun()
+                else:
+                    st.error("❌ Credenciales incorrectas")
+
+    if "password_correct" not in st.session_state:
+        login_form()
+        return False
+    return True
+
+if not check_password():
+    st.stop() # Bloquea el resto de la app si no hay login
 
 # --- CONFIGURACIÓN DE BASE DE DATOS POSTGRES ---
 def get_engine():
@@ -96,3 +114,4 @@ with t1:
             "Usuario": st.column_config.Column(disabled=True),
             "Servicio": st.column_config.Column(disabled=True),
             "Vencimiento": st.
+
