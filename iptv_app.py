@@ -6,36 +6,9 @@ import sqlalchemy
 import urllib.parse
 
 # --- 1. CONFIGURACIÓN INICIAL ---
-st.set_page_config(page_title="IPTV Pro Admin", layout="wide", page_icon="🔐")
+st.set_page_config(page_title="IPTV Pro Admin", layout="wide", page_icon="🖥️")
 
-# --- 2. SISTEMA DE SEGURIDAD (LOGIN) ---
-def check_password():
-    if st.session_state.get("password_correct", False):
-        return True
-
-    # Leemos las variables de Railway eliminando espacios accidentales
-    admin_user = os.getenv("ADMIN_USER", "").strip()
-    admin_pass = os.getenv("ADMIN_PASSWORD", "").strip()
-
-    with st.form("login_form"):
-        st.title("🔐 Acceso Administrativo")
-        u = st.text_input("Usuario").strip()
-        p = st.text_input("Contraseña", type="password").strip()
-        
-        if st.form_submit_button("Entrar"):
-            if admin_user and admin_pass and u == admin_user and p == admin_pass:
-                st.session_state["password_correct"] = True
-                st.rerun()
-            else:
-                st.error("❌ Credenciales incorrectas")
-                if not admin_user or not admin_pass:
-                    st.warning("⚠️ Railway no detecta ADMIN_USER o ADMIN_PASSWORD en Variables.")
-    return False
-
-if not check_password():
-    st.stop()
-
-# --- 3. CONEXIÓN A BASE DE DATOS ---
+# --- 2. CONEXIÓN A BASE DE DATOS ---
 def get_engine():
     url = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://", 1)
     return sqlalchemy.create_engine(url)
@@ -44,19 +17,19 @@ def load_data():
     engine = get_engine()
     df_c = pd.read_sql("SELECT * FROM clientes", engine)
     df_f = pd.read_sql("SELECT * FROM finanzas", engine)
+    # Limpieza de nulos en observaciones
     if 'Observaciones' in df_c.columns:
         df_c['Observaciones'] = df_c['Observaciones'].astype(str).replace(['None', 'nan', '<NA>', 'nan '], '')
     return df_c, df_f
 
-# --- 4. CARGA DE DATOS ---
+# --- 3. CARGA DE DATOS ---
 df_cli, df_fin = load_data()
 df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 
-# --- 5. INTERFAZ PRINCIPAL ---
-st.sidebar.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"password_correct": False}))
+# --- 4. INTERFAZ PRINCIPAL ---
 st.title("🖥️ Administración IPTV Pro")
 
-t1, t2, t3 = st.tabs(["📋 Clientes", "🛒 Ventas y Renovación", "📊 Finanzas"])
+t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Renovación", "📊 Reporte Financiero"])
 
 # PESTAÑA 1: GESTIÓN DE CLIENTES
 with t1:
@@ -75,6 +48,7 @@ with t1:
             return ''
         except: return ''
 
+    # Editor de datos con configuración corregida
     df_editado = st.data_editor(
         df_m.style.applymap(color_vencimiento, subset=['Vencimiento']),
         column_config={
@@ -84,7 +58,8 @@ with t1:
             "Servicio": st.column_config.Column(disabled=True),
             "Vencimiento": st.column_config.Column(disabled=True)
         },
-        use_container_width=True, hide_index=True
+        use_container_width=True, 
+        hide_index=True
     )
 
     if st.button("💾 Guardar Cambios"):
@@ -113,7 +88,6 @@ with t2:
                 if u_renov != "---":
                     fv = (datetime.now() + timedelta(days=meses*30)).strftime('%d-%b').lower()
                     with get_engine().connect() as conn:
-                        # LÍNEA CORREGIDA Y CERRADA:
                         conn.execute(
                             sqlalchemy.text('UPDATE clientes SET "Vencimiento"=:v, "Servicio"=:s WHERE "Usuario"=:u'),
                             {"v": fv, "s": prod, "u": u_renov}
@@ -126,11 +100,11 @@ with t2:
                     st.rerun()
 
     with c2:
-        st.subheader("📲 Recordatorio WhatsApp")
+        st.subheader("📲 WhatsApp Rápido")
         if u_renov != "---":
             row_sel = df_cli[df_cli['Usuario'] == u_renov].iloc[0]
             tel = str(row_sel['WhatsApp']).replace(" ", "").replace("+", "")
-            msg = urllib.parse.quote(f"Hola {u_renov}, tu servicio de IPTV vence el {row_sel['Vencimiento']}. ¿Deseas renovar?")
+            msg = urllib.parse.quote(f"Hola {u_renov}, tu servicio vence el {row_sel['Vencimiento']}. ¿Gustas renovar?")
             st.link_button(f"Enviar mensaje a {u_renov}", f"https://wa.me/{tel}?text={msg}")
 
 # PESTAÑA 3: REPORTES FINANCIEROS
@@ -140,4 +114,7 @@ with t3:
         df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce')
         ingresos = df_fin[df_fin['Tipo']=="Ingreso"]['Monto'].sum()
         egresos = df_fin[df_fin['Tipo']=="Egreso"]['Monto'].sum()
-        st.metric("Balance Neto", f"${ingresos - egresos
+        st.metric("Balance Neto", f"${ingresos - egresos:,.2f}", f"Gastos: ${egresos}")
+        st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay movimientos financieros registrados.")
