@@ -65,5 +65,21 @@ with t1:
             return ''
         except: return ''
 
-    # EDITOR CORREGIDO (Línea 85-95 aprox)
+    # AQUÍ ESTABA EL ERROR - AHORA CERRADO CORRECTAMENTE
     df_editado = st.data_editor(
+        df_m.style.applymap(color_vencimiento, subset=['Vencimiento']),
+        column_config={
+            "WhatsApp": st.column_config.TextColumn("WhatsApp"),
+            "Observaciones": st.column_config.TextColumn("Observaciones"),
+            "Usuario": st.column_config.Column(disabled=True),
+            "Servicio": st.column_config.Column(disabled=True),
+            "Vencimiento": st.column_config.Column(disabled=True)
+        },
+        use_container_width=True, hide_index=True
+    )
+
+    if st.button("💾 Guardar Cambios"):
+        engine = get_engine()
+        with engine.connect() as conn:
+            for _, r in df_editado.iterrows():
+                conn.execute(sqlalchemy.text('UPDATE clientes SET "WhatsApp"=:w, "Observ
