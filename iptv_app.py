@@ -14,10 +14,10 @@ def get_engine():
         url = url.replace("postgres://", "postgresql://", 1)
     return sqlalchemy.create_engine(url)
 
-def inicializar_tablas():
+def inicializar_y_migrar_tablas():
     engine = get_engine()
     with engine.connect() as conn:
-        # Crea tablas si no existen
+        # Crear tablas si no existen
         conn.execute(sqlalchemy.text("""
             CREATE TABLE IF NOT EXISTS clientes (
                 id SERIAL PRIMARY KEY,
@@ -37,19 +37,24 @@ def inicializar_tablas():
                 "Monto" FLOAT
             );
         """))
-        # FIX: Forzamos que WhatsApp sea TEXTO para evitar el error de "double precision"
+        
+        # --- SOLUCIÓN AL ERROR DATAERROR (MIGRACIÓN FORZADA) ---
+        # Forzamos que las columnas conflictivas sean TEXTO en Railway
         try:
-            conn.execute(sqlalchemy.text('ALTER TABLE clientes ALTER COLUMN "WhatsApp" TYPE TEXT'))
-        except:
-            pass
+            conn.execute(sqlalchemy.text('ALTER TABLE clientes ALTER COLUMN "WhatsApp" TYPE TEXT USING "WhatsApp"::text'))
+            conn.execute(sqlalchemy.text('ALTER TABLE clientes ALTER COLUMN "Observaciones" TYPE TEXT USING "Observaciones"::text'))
+            conn.execute(sqlalchemy.text('ALTER TABLE clientes ALTER COLUMN "Vencimiento" TYPE TEXT USING "Vencimiento"::text'))
+        except Exception:
+            pass # Si ya son texto, no hace nada
+        
         conn.commit()
 
 def load_data():
     engine = get_engine()
-    inicializar_tablas()
+    inicializar_y_migrar_tablas()
     df_c = pd.read_sql("SELECT * FROM clientes", engine)
     df_f = pd.read_sql("SELECT * FROM finanzas", engine)
-    # Limpieza de nulos para evitar errores en el editor
+    # Limpieza de nulos para el editor
     for col in ['WhatsApp', 'Observaciones']:
         if col in df_c.columns:
             df_c[col] = df_c[col].astype(str).replace(['None', 'nan', '<NA>'], '')
@@ -109,7 +114,7 @@ with t1:
                 conn.commit()
             st.rerun()
 
-# --- PESTAÑA 2: VENTAS (CON FIX DE PRECIO) ---
+# --- PESTAÑA 2: VENTAS ---
 with t2:
     c1, c2, c3 = st.columns(3)
     engine = get_engine()
@@ -119,7 +124,7 @@ with t2:
         u_renov = st.selectbox("Elegir cliente:", ["---"] + list(df_cli['Usuario'].unique()), key="sb_ren")
         with st.form("f_renov"):
             pr = st.selectbox("Producto:", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
-            cant_c = st.number_input("Meses a renovar:", min_value=1, value=1)
+            cant_c = st.number_input("Meses a renovar (Créditos):", min_value=1, value=1)
             vl = st.number_input("Precio cobrado ($):", min_value=0.0)
             if st.form_submit_button("💰 Registrar Renovación"):
                 if u_renov != "---":
@@ -137,16 +142,15 @@ with t2:
             nu = st.text_input("Nombre de Usuario")
             np = st.selectbox("Elegir Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
             nw = st.text_input("Número de WhatsApp")
-            cant_c_n = st.number_input("Meses comprados:", min_value=1, value=1)
+            cant_c_n = st.number_input("Meses comprados (Créditos):", min_value=1, value=1)
             ni_val = st.number_input("Precio de venta ($)", min_value=0.0)
             if st.form_submit_button("💾 Crear Usuario"):
                 if nu:
                     fv_n = (datetime.now() + timedelta(days=cant_c_n*30)).strftime('%d-%b').lower()
-                    # Limpiamos el WhatsApp para que sea texto
-                    nw_clean = str(nw).strip()
                     with engine.connect() as conn:
+                        # Aseguramos que Observaciones sea un string vacío, no NULL
                         conn.execute(sqlalchemy.text('INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones") VALUES (:u, :s, :v, :w, :o)'),
-                                     {"u": nu, "s": np, "v": fv_n, "w": nw_clean, "o": ""})
+                                     {"u": nu, "s": np, "v": fv_n, "w": str(nw), "o": ""})
                         if ni_val > 0:
                             conn.execute(sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
                                          {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo {cant_c_n}m: {nu}", "m": float(ni_val)})
@@ -166,7 +170,7 @@ with t2:
                         conn.commit()
                     st.rerun()
 
-# --- PESTAÑA 3: FINANZAS ---
+# --- PESTAÑA 3: REPORTES ---
 with t3:
     st.subheader("📊 Resumen Financiero")
     df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce').fillna(0.0)
