@@ -127,7 +127,6 @@ with t1:
 
 # --- PESTAÑA 2: VENTAS Y GESTIÓN DE CRÉDITOS ---
 with t2:
-    # Las 3 columnas originales que mencionaste
     c1, c2, c3 = st.columns(3)
     engine = get_engine()
     
@@ -148,7 +147,7 @@ with t2:
                         )
                         conn.execute(
                             sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renov {cant_c}m {pr}: {u_renov}", "m": vl}
+                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Renov {cant_c}m {pr}: {u_renov}", "m": float(vl)}
                         )
                         conn.commit()
                     st.rerun()
@@ -159,19 +158,22 @@ with t2:
             nu = st.text_input("Nombre de Usuario")
             np = st.selectbox("Elegir Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
             nw = st.text_input("Número de WhatsApp")
+            # NUEVA OPCIÓN: Meses comprados para nuevo cliente
+            cant_c_n = st.number_input("Meses comprados (Créditos):", min_value=1, value=1)
             ni_val = st.number_input("Precio de venta ($)", min_value=0.0)
             if st.form_submit_button("💾 Crear Usuario"):
                 if nu:
-                    fv = (datetime.now() + timedelta(days=30)).strftime('%d-%b').lower()
+                    # Calculamos vencimiento según créditos (30 días por crédito)
+                    fv_nuevo = (datetime.now() + timedelta(days=cant_c_n*30)).strftime('%d-%b').lower()
                     with engine.connect() as conn:
                         conn.execute(
                             sqlalchemy.text('INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones") VALUES (:u, :s, :v, :w, :o)'),
-                            {"u": nu, "s": np, "v": fv, "w": nw, "o": ""}
+                            {"u": nu, "s": np, "v": fv_nuevo, "w": nw, "o": ""}
                         )
                         if ni_val > 0:
                             conn.execute(
                                 sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                                {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo: {nu}", "m": ni_val}
+                                {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo {cant_c_n}m: {nu}", "m": float(ni_val)}
                             )
                         conn.commit()
                     st.rerun()
@@ -186,40 +188,26 @@ with t2:
                     with engine.connect() as conn:
                         conn.execute(
                             sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Egreso", "d": det_e, "m": mnt_e}
+                            {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Egreso", "d": det_e, "m": float(mnt_e)}
                         )
                         conn.commit()
                     st.rerun()
 
-# --- PESTAÑA 3: REPORTES FINANCIEROS Y EXPORTACIÓN ---
+# --- PESTAÑA 3: REPORTES FINANCIEROS ---
 with t3:
     st.subheader("📊 Resumen de Utilidades")
-    
-    # 1. Cálculos de dinero
     df_fin_view['Monto'] = pd.to_numeric(df_fin_view['Monto'], errors='coerce')
     ing = df_fin_view[df_fin_view['Tipo']=="Ingreso"]['Monto'].sum()
     egr = df_fin_view[df_fin_view['Tipo']=="Egreso"]['Monto'].sum()
-    
-    # 2. Mostrar métricas
     st.metric("Utilidad Actual", f"${ing - egr:,.2f}", delta=f"Gastos totales: ${egr}")
     
-    # 3. Mostrar tabla si hay datos
     if not df_fin_view.empty:
         st.dataframe(df_fin_view.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
-    else:
-        st.info("Aún no hay movimientos financieros registrados.")
-
-    # 4. BOTÓN DE EXPORTAR (FUERA DEL IF PARA QUE SIEMPRE SE VEA)
+    
     st.divider()
-    st.write("📂 **Exportar Contabilidad**")
-    
-    # Preparamos el archivo aunque esté vacío
-    csv_data = df_fin_view.to_csv(index=False).encode('utf-8')
-    
     st.download_button(
-        label="📥 Descargar historial financiero para Excel",
-        data=csv_data,
+        label="📥 Descargar historial financiero",
+        data=df_fin_view.to_csv(index=False).encode('utf-8'),
         file_name=f'reporte_iptv_{datetime.now().strftime("%Y-%m-%d")}.csv',
-        mime='text/csv',
-        key="btn_descarga_final"
+        mime='text/csv'
     )
