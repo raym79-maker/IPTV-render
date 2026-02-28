@@ -160,21 +160,31 @@ with t2:
             np = st.selectbox("Elegir Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
             nw = st.text_input("Número de WhatsApp")
             ni_val = st.number_input("Precio de venta ($)", min_value=0.0)
-            if st.form_submit_button("💾 Crear Usuario"):
-                if nu:
-                    fv = (datetime.now() + timedelta(days=30)).strftime('%d-%b').lower()
-                    with engine.connect() as conn:
-                        conn.execute(
-                            sqlalchemy.text('INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones") VALUES (:u, :s, :v, :w, :o)'),
-                            {"u": nu, "s": np, "v": fv, "w": nw, "o": ""}
-                        )
-                        if ni_val > 0:
-                            conn.execute(
-                                sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
-                                {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo: {nu}", "m": ni_val}
-                            )
-                        conn.commit()
-                    st.rerun()
+            # --- EN TU BLOQUE DE "NUEVO REGISTRO" ---
+if st.form_submit_button("💾 Crear"):
+    if nu:
+        # 1. Aseguramos que los valores sean del tipo correcto
+        precio_val = float(ni_val) if ni_val else 0.0
+        fv_nuevo = (datetime.now() + timedelta(days=cant_c_n*30)).strftime('%d-%b').lower()
+        
+        # 2. Ejecutamos el INSERT con datos limpios
+        query = sqlalchemy.text('''
+            INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones", "Precio") 
+            VALUES (:u, :s, :v, :w, :o, :p)
+        ''')
+        
+        # Pasamos los parámetros de forma segura
+        conn.execute(query, {
+            "u": nu, 
+            "s": np, 
+            "v": fv_nuevo, 
+            "w": nw, 
+            "o": "",        # Observaciones vacías como string vacío es aceptable
+            "p": precio_val # Aquí ya es un número (float)
+        })
+        conn.commit() # ¡Muy importante en SQLAlchemy para guardar cambios!
+        st.success(f"Cliente {nu} registrado.")
+        st.rerun()
 
     with c3:
         st.subheader("💳 Egresos / Créditos")
@@ -223,3 +233,4 @@ with t3:
         mime='text/csv',
         key="btn_descarga_final"
     )
+
