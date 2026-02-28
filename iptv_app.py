@@ -17,6 +17,7 @@ def get_engine():
 def inicializar_tablas():
     engine = get_engine()
     with engine.connect() as conn:
+        # Crea tablas si no existen
         conn.execute(sqlalchemy.text("""
             CREATE TABLE IF NOT EXISTS clientes (
                 id SERIAL PRIMARY KEY,
@@ -36,6 +37,11 @@ def inicializar_tablas():
                 "Monto" FLOAT
             );
         """))
+        # FIX: Forzamos que WhatsApp sea TEXTO para evitar el error de "double precision"
+        try:
+            conn.execute(sqlalchemy.text('ALTER TABLE clientes ALTER COLUMN "WhatsApp" TYPE TEXT'))
+        except:
+            pass
         conn.commit()
 
 def load_data():
@@ -43,8 +49,10 @@ def load_data():
     inicializar_tablas()
     df_c = pd.read_sql("SELECT * FROM clientes", engine)
     df_f = pd.read_sql("SELECT * FROM finanzas", engine)
-    if 'Observaciones' in df_c.columns:
-        df_c['Observaciones'] = df_c['Observaciones'].astype(str).replace(['None', 'nan', '<NA>'], '')
+    # Limpieza de nulos para evitar errores en el editor
+    for col in ['WhatsApp', 'Observaciones']:
+        if col in df_c.columns:
+            df_c[col] = df_c[col].astype(str).replace(['None', 'nan', '<NA>'], '')
     return df_c, df_f
 
 df_cli, df_fin = load_data()
@@ -54,6 +62,7 @@ df_cli_view = df_cli.drop(columns=['id']) if 'id' in df_cli.columns else df_cli
 st.title("🖥️ Administración IPTV Pro")
 t1, t2, t3 = st.tabs(["📋 Lista de Clientes", "🛒 Ventas y Créditos", "📊 Reporte Financiero"])
 
+# --- PESTAÑA 1: GESTIÓN ---
 with t1:
     st.subheader("📝 Gestión de Clientes")
     busqueda = st.text_input("🔍 Buscar cliente:", "")
@@ -87,6 +96,7 @@ with t1:
                 conn.execute(sqlalchemy.text('UPDATE clientes SET "WhatsApp"=:w, "Observaciones"=:o WHERE "Usuario"=:u'),
                              {"w": str(row["WhatsApp"]), "o": str(row["Observaciones"]), "u": row["Usuario"]})
             conn.commit()
+        st.success("¡Base de Datos Actualizada!")
         st.rerun()
 
     st.divider()
@@ -99,6 +109,7 @@ with t1:
                 conn.commit()
             st.rerun()
 
+# --- PESTAÑA 2: VENTAS (CON FIX DE PRECIO) ---
 with t2:
     c1, c2, c3 = st.columns(3)
     engine = get_engine()
@@ -126,14 +137,16 @@ with t2:
             nu = st.text_input("Nombre de Usuario")
             np = st.selectbox("Elegir Panel", ["M327", "LEDTV", "SMARTBOX", "ALFA TV"])
             nw = st.text_input("Número de WhatsApp")
-            cant_c_n = st.number_input("Meses comprados (Créditos):", min_value=1, value=1)
+            cant_c_n = st.number_input("Meses comprados:", min_value=1, value=1)
             ni_val = st.number_input("Precio de venta ($)", min_value=0.0)
             if st.form_submit_button("💾 Crear Usuario"):
                 if nu:
                     fv_n = (datetime.now() + timedelta(days=cant_c_n*30)).strftime('%d-%b').lower()
+                    # Limpiamos el WhatsApp para que sea texto
+                    nw_clean = str(nw).strip()
                     with engine.connect() as conn:
                         conn.execute(sqlalchemy.text('INSERT INTO clientes ("Usuario", "Servicio", "Vencimiento", "WhatsApp", "Observaciones") VALUES (:u, :s, :v, :w, :o)'),
-                                     {"u": nu, "s": np, "v": fv_n, "w": nw, "o": ""})
+                                     {"u": nu, "s": np, "v": fv_n, "w": nw_clean, "o": ""})
                         if ni_val > 0:
                             conn.execute(sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
                                          {"f": datetime.now().strftime("%Y-%m-%d"), "t": "Ingreso", "d": f"Nuevo {cant_c_n}m: {nu}", "m": float(ni_val)})
@@ -143,9 +156,9 @@ with t2:
     with c3:
         st.subheader("💳 Egresos / Créditos")
         with st.form("f_egr"):
-            det_e = st.text_input("Detalle (Ej: Compra de créditos)")
-            mnt_e = st.number_input("Costo total pagado ($)", min_value=0.0)
-            if st.form_submit_button("📦 Registrar Gasto"):
+            det_e = st.text_input("Detalle (Ej: Créditos M327)")
+            mnt_e = st.number_input("Costo pagado ($)", min_value=0.0)
+            if st.form_submit_button("📦 Registrar Compra"):
                 if det_e and mnt_e > 0:
                     with engine.connect() as conn:
                         conn.execute(sqlalchemy.text('INSERT INTO finanzas ("Fecha", "Tipo", "Detalle", "Monto") VALUES (:f, :t, :d, :m)'),
@@ -153,9 +166,10 @@ with t2:
                         conn.commit()
                     st.rerun()
 
+# --- PESTAÑA 3: FINANZAS ---
 with t3:
     st.subheader("📊 Resumen Financiero")
-    df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce')
+    df_fin['Monto'] = pd.to_numeric(df_fin['Monto'], errors='coerce').fillna(0.0)
     ing, egr = df_fin[df_fin['Tipo']=="Ingreso"]['Monto'].sum(), df_fin[df_fin['Tipo']=="Egreso"]['Monto'].sum()
     st.metric("Utilidad Neta", f"${ing - egr:,.2f}", delta=f"Gastos: ${egr}")
     st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
