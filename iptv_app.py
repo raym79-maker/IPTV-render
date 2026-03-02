@@ -76,8 +76,18 @@ with t1:
                 conn.execute(sqlalchemy.text('UPDATE clientes SET "WhatsApp"=:w, "Observaciones"=:o WHERE "Usuario"=:u'),
                              {"w": str(row["WhatsApp"]), "o": str(row["Observaciones"]), "u": row["Usuario"]})
             conn.commit()
-        st.success("¡Datos guardados y ordenados!")
+        st.success("¡Base de Datos Actualizada!")
         st.rerun()
+
+    st.divider()
+    st.subheader("🗑️ Eliminar Usuario")
+    u_del = st.selectbox("Selecciona para borrar:", ["---"] + list(df_cli['Usuario'].unique()))
+    if st.button("❌ Confirmar Eliminación"):
+        if u_del != "---":
+            with get_engine().connect() as conn:
+                conn.execute(sqlalchemy.text('DELETE FROM clientes WHERE "Usuario"=:u'), {"u": u_del})
+                conn.commit()
+            st.rerun()
 
 # --- PESTAÑA 2: VENTAS (MANTENIENDO SOLUCIONES PREVIAS) ---
 with t2:
@@ -140,3 +150,4 @@ with t3:
     ing, egr = df_fin[df_fin['Tipo']=="Ingreso"]['Monto'].sum(), df_fin[df_fin['Tipo']=="Egreso"]['Monto'].sum()
     st.metric("Utilidad Neta", f"${ing - egr:,.2f}", delta=f"Gastos: ${egr}")
     st.dataframe(df_fin.sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
+
